@@ -81,7 +81,7 @@ def record_dataset(filenames):
 
 
 def get_filenames(is_training, data_dir):
-  """Returns a list of filenames."""
+  """Returns a list of filenames found in the given directory."""
   data_dir = os.path.join(data_dir, 'cifar-10-batches-bin')
 
   assert os.path.exists(data_dir), (
@@ -98,7 +98,7 @@ def get_filenames(is_training, data_dir):
 
 
 def dataset_parser(value):
-  """Parse a CIFAR-10 record from value."""
+  """Parse an CIFAR-10 image and label from a raw record."""
   # Every record consists of a label followed by the image, with a fixed number
   # of bytes for each.
   label_bytes = 1
@@ -123,7 +123,7 @@ def dataset_parser(value):
   return image, tf.one_hot(label, _NUM_CLASSES)
 
 
-def train_preprocess_fn(image, label):
+def train_preprocess_fn(image):
   """Preprocess a single training image of layout [height, width, depth]."""
   # Resize the image to add four extra pixels on each side.
   image = tf.image.resize_image_with_crop_or_pad(image, _HEIGHT + 8, _WIDTH + 8)
@@ -134,7 +134,7 @@ def train_preprocess_fn(image, label):
   # Randomly flip the image horizontally.
   image = tf.image.random_flip_left_right(image)
 
-  return image, label
+  return image
 
 
 def input_fn(is_training, data_dir, batch_size, num_epochs=1):
@@ -143,29 +143,31 @@ def input_fn(is_training, data_dir, batch_size, num_epochs=1):
   Args:
     is_training: A boolean denoting whether the input is for training.
     data_dir: The directory containing the input data.
-    batch_size: The number samples per batch.
+    batch_size: The number of samples per batch.
     num_epochs: The number of epochs to repeat the dataset.
 
   Returns:
     A tuple of images and labels.
   """
+  def parse_and_preprocess_dataset(line):
+    image, label = dataset_parser(line)
+    if is_training:
+      image = train_preprocess_fn(image)
+    # Subtract off the mean and divide by the variance of the pixels.
+    image = tf.image.per_image_standardization(image)
+    return image, label
+
   dataset = record_dataset(get_filenames(is_training, data_dir))
-  dataset = dataset.map(dataset_parser)
 
-  # For training, preprocess the image and shuffle.
+  dataset = dataset.repeat(num_epochs)
   if is_training:
-    dataset = dataset.map(train_preprocess_fn)
-
     # When choosing shuffle buffer sizes, larger sizes result in better
     # randomness, while smaller sizes have better performance.
     dataset = dataset.shuffle(buffer_size=_SHUFFLE_BUFFER)
 
-  # Subtract off the mean and divide by the variance of the pixels.
-  dataset = dataset.map(
-      lambda image, label: (tf.image.per_image_standardization(image), label))
-
+  # Here!
+  dataset = dataset.map(parse_and_preprocess_dataset).prefetch(2 * batch_size)
   dataset = dataset.batch(batch_size)
-  dataset = dataset.repeat(num_epochs)
 
   # Fetch input tuple from the iterator.
   iterator = dataset.make_one_shot_iterator()

@@ -74,7 +74,7 @@ def input_fn(is_training, filename, batch_size=1, num_epochs=1):
   dataset = tf.data.TFRecordDataset([filename])
 
   # Parse each example in the dataset
-  dataset = dataset.map(example_parser)
+  dataset = dataset.map(example_parser).prefetch(batch_size)
 
   # Apply dataset transformations
   if is_training:
