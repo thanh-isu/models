@@ -29,7 +29,7 @@ tf.app.flags.DEFINE_string('dataset', 'cifar10', 'cifar10 or cifar100.')
 tf.app.flags.DEFINE_string('mode', 'train', 'train or eval.')
 tf.app.flags.DEFINE_string('train_data_path', '',
                            'Filepattern for training data.')
-tf.app.flags.DEFINE_string('eval_data_path', '',
+tf.app.flags.DEFINE_string('eval_data_path', 'cifar10/test_batch.bin',
                            'Filepattern for eval data')
 tf.app.flags.DEFINE_integer('image_size', 16, 'Image side length.')
 tf.app.flags.DEFINE_string('train_dir', '',
@@ -111,11 +111,12 @@ def train(hps):
 
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=FLAGS.log_root,
-      hooks=[logging_hook, _LearningRateSetterHook(), tf.train.StopAtStepHook(num_steps=1000)],
+      hooks=[logging_hook, _LearningRateSetterHook(), tf.train.StopAtStepHook(num_steps=64000)],
       chief_only_hooks=[summary_hook],
       # Since we provide a SummarySaverHook, we need to disable default
       # SummarySaverHook. To do that we set save_summaries_steps to 0.
       save_summaries_steps=0,
+      save_checkpoint_secs=60,
       config=tf.ConfigProto(allow_soft_placement=True)) as mon_sess:
     while not mon_sess.should_stop():
       mon_sess.run(model.train_op)
