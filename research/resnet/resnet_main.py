@@ -31,7 +31,7 @@ tf.app.flags.DEFINE_string('train_data_path', '',
                            'Filepattern for training data.')
 tf.app.flags.DEFINE_string('eval_data_path', '',
                            'Filepattern for eval data')
-tf.app.flags.DEFINE_integer('image_size', 32, 'Image side length.')
+tf.app.flags.DEFINE_integer('image_size', 16, 'Image side length.')
 tf.app.flags.DEFINE_string('train_dir', '',
                            'Directory to keep training outputs.')
 tf.app.flags.DEFINE_string('eval_dir', '',
@@ -46,6 +46,12 @@ tf.app.flags.DEFINE_string('log_root', '',
 tf.app.flags.DEFINE_integer('num_gpus', 0,
                             'Number of gpus used for training. (0 or 1)')
 
+
+def calculate_precision(model):
+  truth = tf.argmax(model.labels, axis=1)
+  predictions = tf.argmax(model.predictions, axis=1)
+  precision = tf.reduce_mean(tf.to_float(tf.equal(predictions, truth)))
+  return precision
 
 def train(hps):
   """Training loop."""
@@ -66,18 +72,22 @@ def train(hps):
 
   truth = tf.argmax(model.labels, axis=1)
   predictions = tf.argmax(model.predictions, axis=1)
+  # Change here: log and summarize error instead of precision
   precision = tf.reduce_mean(tf.to_float(tf.equal(predictions, truth)))
 
   summary_hook = tf.train.SummarySaverHook(
       save_steps=100,
       output_dir=FLAGS.train_dir,
       summary_op=tf.summary.merge([model.summaries,
-                                   tf.summary.scalar('Precision', precision)]))
+                                   tf.summary.scalar('Error', 1.0-precision)]))
+  
+  ckpt_hook = tf.train.CheckpointSaverHook(save_steps=100, saver = tf.train.Saver(), 
+                                           checkpoint_dir = FLAGS.train_dir)
 
   logging_hook = tf.train.LoggingTensorHook(
       tensors={'step': model.global_step,
                'loss': model.cost,
-               'precision': precision},
+               'error': 1.0-precision},
       every_n_iter=100)
 
   class _LearningRateSetterHook(tf.train.SessionRunHook):
@@ -104,7 +114,7 @@ def train(hps):
 
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=FLAGS.log_root,
-      hooks=[logging_hook, _LearningRateSetterHook()],
+      hooks=[logging_hook, _LearningRateSetterHook(), ckpt_hook],
       chief_only_hooks=[summary_hook],
       # Since we provide a SummarySaverHook, we need to disable default
       # SummarySaverHook. To do that we set save_summaries_steps to 0.
@@ -155,7 +165,7 @@ def evaluate(hps):
 
     precision_summ = tf.Summary()
     precision_summ.value.add(
-        tag='Precision', simple_value=precision)
+        tag='Error', simple_value= 1.0-precision)
     summary_writer.add_summary(precision_summ, train_step)
     best_precision_summ = tf.Summary()
     best_precision_summ.value.add(
@@ -163,13 +173,13 @@ def evaluate(hps):
     summary_writer.add_summary(best_precision_summ, train_step)
     summary_writer.add_summary(summaries, train_step)
     tf.logging.info('loss: %.3f, precision: %.3f, best precision: %.3f' %
-                    (loss, precision, best_precision))
+                    (loss, 1.0-precision, best_precision))
     summary_writer.flush()
 
     if FLAGS.eval_once:
       break
 
-    time.sleep(60)
+    time.sleep(0) # 60
 
 
 def main(_):
@@ -194,7 +204,7 @@ def main(_):
                              num_classes=num_classes,
                              min_lrn_rate=0.0001,
                              lrn_rate=0.1,
-                             num_residual_units=5,
+                             num_residual_units=3,
                              use_bottleneck=False,
                              weight_decay_rate=0.0002,
                              relu_leakiness=0.1,
