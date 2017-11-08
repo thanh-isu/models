@@ -81,9 +81,6 @@ def train(hps):
       summary_op=tf.summary.merge([model.summaries,
                                    tf.summary.scalar('Error', 1.0-precision)]))
   
-  ckpt_hook = tf.train.CheckpointSaverHook(save_steps=100, saver = tf.train.Saver(), 
-                                           checkpoint_dir = FLAGS.train_dir)
-
   logging_hook = tf.train.LoggingTensorHook(
       tensors={'step': model.global_step,
                'loss': model.cost,
@@ -114,7 +111,7 @@ def train(hps):
 
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=FLAGS.log_root,
-      hooks=[logging_hook, _LearningRateSetterHook(), ckpt_hook],
+      hooks=[logging_hook, _LearningRateSetterHook(), tf.train.StopAtStepHook(num_steps=1000)],
       chief_only_hooks=[summary_hook],
       # Since we provide a SummarySaverHook, we need to disable default
       # SummarySaverHook. To do that we set save_summaries_steps to 0.
@@ -128,7 +125,7 @@ def evaluate(hps):
   """Eval loop."""
   images, labels = cifar_input.build_input(
       FLAGS.dataset, FLAGS.eval_data_path, hps.batch_size, FLAGS.mode)
-  model = resnet_model.ResNet(hps, images, labels, FLAGS.mode)
+  model = resnet_model.ResNet(hps, images, labels,  FLAGS.mode)
   model.build_graph()
   saver = tf.train.Saver()
   summary_writer = tf.summary.FileWriter(FLAGS.eval_dir)
